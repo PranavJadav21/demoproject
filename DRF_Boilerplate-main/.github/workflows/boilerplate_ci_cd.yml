@@ -1,0 +1,67 @@
+name: Boilerplate DRF CI/CD
+#i am assuming we are using RDS database 
+on:
+  release:
+    type: [released] 
+    branches:
+      - 'master' # you can add your branch name here
+
+jobs: 
+  deploy:
+    name: Boilerplate Deploy
+    runs-on: ubuntu-latest
+    
+  stratergy: 
+    matrix:
+      python-version: [v3.8]
+  
+  steps:
+    - name: Set up Python ${{ matrix.python-version }} 🐍
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+    - name: Take code from repository 📥
+        uses: actions/checkout@v3
+
+    - name: build docker images 🏗️
+        run: |
+          docker-compose -f docker-compose.yml build backend
+
+     - name: Tag each docker images 🏷
+        run: |
+          docker tag backend:latest ${{ secrets.ECR_REGISTRY }}/backend:latest
+
+    - name: Configure AWS credentials ⚙️
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+        
+      - name: Login with ECR 	🔐
+        uses: aws-actions/amazon-ecr-login@v1
+      - run: aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+      
+      - name: Push images to ECR 	🏇
+        run: |
+          docker push ${{ secrets.ECR_REGISTRY }}/backend:latest
+
+  Deploy:
+    runs-on: ubuntu-20.04
+    needs: Build
+    steps:
+      - name: Run ./Deploy.sh file  📁     
+        uses: appleboy/ssh-action@v0.1.4
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{secrets.SSH_USER}}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          
+          script: |
+            cd boilerplate 
+            git remote set-url origin https://${{ secrets.GIT_USERNAME }}:${{ secrets.GITHUB_TOKEN }}@github.com/<your github repo url>
+            git fetch 
+            git checkout master
+            git pull origin master
+            ./deploy.sh
